@@ -1,19 +1,14 @@
 name: Generate Maven SBOM
 
 on:
-  push:
-    branches:
-      - "master"
-      - "sbom-testing"
-    # paths:
-    #   - "pom.xml"
-    tags:
-      - "*"
+  workflow_run:
+    workflows: [vertx-core (5.x), vertx-core (4.x)]
+    types: [completed]
   workflow_dispatch:
     inputs:
       version:
         description: 'Version'
-        default: 'main'
+        default: 'master'
         required: true
 
 env:
@@ -32,11 +27,19 @@ jobs:
     outputs:
       project-version: ${{ steps.version.outputs.PROJECT_VERSION }}
     steps:
+      - name: Get branch name from trigger event
+        shell: bash
+        run: |
+          echo "branch=${{ github.event.inputs.version }}" >> $GITHUB_ENV
+          if [[ "${{ github.event.workflow_run.workflow }}" == "vertx-core (4.x)" ]]; then
+            echo "branch=4.x" >> $GITHUB_ENV
+          fi
+
       - name: Checkout repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
-          ref: ${{ github.event.inputs.version }}
+          ref: ${{ env.branch }}
 
       - name: Setup Java SDK
         uses: actions/setup-java@3a4f6e1af504cf6a31855fa899c6aa5355ba6c12 # v4.7.0
@@ -53,14 +56,7 @@ jobs:
         id: version
         shell: bash
         run: |
-          event="${{ github.event_name }}"
-          ref="${{ github.ref }}"
-          input="${{ github.event.inputs.version }}"
           VERSION="$(jq -r '.metadata.component.version' < ./${{ env.PRODUCT_PATH }}/target/bom.json)"
-          if [[ "$event" == "push" && "$ref" == refs/heads/* ]] || \
-            [[ "$event" == "workflow_dispatch" && ! "$input" =~ ^v ]]; then
-            VERSION="${VERSION}@dev"
-          fi
           echo "PROJECT_VERSION=$VERSION" >> $GITHUB_OUTPUT
           echo "Product version: $VERSION"
       - name: Upload sbom
